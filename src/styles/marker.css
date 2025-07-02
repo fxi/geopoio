@@ -1,0 +1,80 @@
+/* Custom POI Marker Styles */
+.poi-marker {
+  width: 32px;
+  height: 32px;
+  background: white;
+  border: 3px solid #ccc;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.poi-marker__icon {
+  font-size: 16px;
+  line-height: 1;
+  user-select: none;
+}
+
+/* Triangular pointer pointing down */
+.poi-marker::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid #ccc;
+}
+
+/* Hover effect */
+.poi-marker:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* POI Type Colors */
+.poi-marker--drinking_water {
+  border-color: #00BFFF;
+}
+
+.poi-marker--drinking_water::after {
+  border-top-color: #00BFFF;
+}
+
+.poi-marker--restaurant {
+  border-color: #FF6B35;
+}
+
+.poi-marker--restaurant::after {
+  border-top-color: #FF6B35;
+}
+
+.poi-marker--fuel {
+  border-color: #FFD700;
+}
+
+.poi-marker--fuel::after {
+  border-top-color: #FFD700;
+}
+
+.poi-marker--supermarket {
+  border-color: #32CD32;
+}
+
+.poi-marker--supermarket::after {
+  border-top-color: #32CD32;
+}
+
+.poi-marker--hospital {
+  border-color: #FF4444;
+}
+
+.poi-marker--hospital::after {
+  border-top-color: #FF4444;
+}
