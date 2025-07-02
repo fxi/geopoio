@@ -3,10 +3,11 @@
   import maplibregl from 'maplibre-gl';
   import 'maplibre-gl/dist/maplibre-gl.css';
   import { gpxStore, poiStore, settingsStore, poiStoreHelpers } from '../stores';
+  import { locationShareStore } from '../stores/locationShare';
   import { OverpassService } from '../services/OverpassService';
   import { POIManager } from '../services/POIManager';
   import type { Map as MaplibreMap } from 'maplibre-gl';
-  import type { POI } from '../types';
+  import type { POI, GroupMember } from '../types';
   import '../styles/marker.css';
 
   const dispatch = createEventDispatcher<{
@@ -18,6 +19,7 @@
   let userLocation: [number, number] | null = null;
   let allPOIs: any[] = []; // Store all fetched POIs
   let poiManager: POIManager;
+  let groupMemberMarkers: Map<string, maplibregl.Marker> = new Map();
 
   const overpassService = new OverpassService();
 
@@ -53,6 +55,7 @@
       gpxStore.subscribe(handleGPXChange);
       poiStore.subscribe(updatePOIMarkers);
       settingsStore.subscribe(debouncedHandleSettingsChange);
+      locationShareStore.subscribe(handleLocationShareChange);
       
       // Process any existing data
       const currentTracks = $gpxStore;
@@ -281,6 +284,54 @@
   // Create debounced version of handleSettingsChange with 1 second delay
   const debouncedHandleSettingsChange = debounce(handleSettingsChange, 1000);
 
+  function handleLocationShareChange(locationShareState: any) {
+    if (!map) return;
+    
+    console.log('🌐 Location sharing state changed:', locationShareState);
+    updateGroupMemberMarkers(locationShareState.members);
+  }
+
+  function updateGroupMemberMarkers(members: GroupMember[]) {
+    if (!map) return;
+
+    console.log('👥 Updating group member markers:', members.length, 'members');
+
+    // Remove existing group member markers
+    groupMemberMarkers.forEach(marker => marker.remove());
+    groupMemberMarkers.clear();
+
+    // Add new markers for each group member
+    members.forEach(member => {
+      // Create custom marker element
+      const markerElement = document.createElement('div');
+      markerElement.className = 'group-member-marker';
+      markerElement.innerHTML = `
+        <div class="member-emoji">${member.emoji}</div>
+        <div class="member-name">${member.name}</div>
+      `;
+
+      // Create marker
+      const marker = new maplibregl.Marker(markerElement)
+        .setLngLat([member.lon, member.lat])
+        .addTo(map);
+
+      // Add popup with member info
+      const popup = new maplibregl.Popup({ offset: 25 })
+        .setHTML(`
+          <div class="member-popup">
+            <div class="member-popup-emoji">${member.emoji}</div>
+            <div class="member-popup-name">${member.name}</div>
+            <div class="member-popup-time">
+              Last seen: ${Math.round((Date.now() - member.lastSeen) / 1000)}s ago
+            </div>
+          </div>
+        `);
+
+      marker.setPopup(popup);
+      groupMemberMarkers.set(member.id, marker);
+    });
+  }
+
   // Manual POI fetching methods
   export function findPOIs() {
     const tracks = $gpxStore.filter(t => t.visible);
@@ -361,5 +412,59 @@
     color: black !important;
     border-radius: 8px !important;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+  }
+
+  :global(.group-member-marker) {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    transform: translate(-50%, -100%);
+  }
+
+  :global(.member-emoji) {
+    font-size: 24px;
+    background: white;
+    border: 3px solid #007bff;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+
+  :global(.member-name) {
+    background: rgba(0, 123, 255, 0.9);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    margin-top: 4px;
+    white-space: nowrap;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+
+  :global(.member-popup) {
+    text-align: center;
+    padding: 8px;
+  }
+
+  :global(.member-popup-emoji) {
+    font-size: 32px;
+    margin-bottom: 8px;
+  }
+
+  :global(.member-popup-name) {
+    font-weight: bold;
+    font-size: 16px;
+    margin-bottom: 4px;
+  }
+
+  :global(.member-popup-time) {
+    font-size: 12px;
+    color: #666;
   }
 </style>

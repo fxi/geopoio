@@ -36,3 +36,28 @@ export interface Settings {
   // Keep bufferDistance for backward compatibility during migration
   bufferDistance?: number;
 }
+
+// Location sharing types
+export interface GroupMember {
+  id: string;
+  name: string;
+  emoji: string;
+  lat: number;
+  lon: number;
+  lastSeen: number;
+}
+
+export interface LocationGroup {
+  id: string;
+  members: GroupMember[];
+  createdAt: number;
+}
+
+export interface LocationShareState {
+  isActive: boolean;
+  groupId: string | null;
+  userId: string | null;
+  userName: string;
+  userEmoji: string;
+  members: GroupMember[];
+}

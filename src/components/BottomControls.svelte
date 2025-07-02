@@ -5,7 +5,6 @@
 
   const controls = [
     { id: 'upload', icon: '📁', label: 'Upload GPX', action: () => dispatch('uploadGPX') },
-    { id: 'testRoute', icon: '🧪', label: 'Test Route', action: () => dispatch('loadTestRoute') },
     { id: 'findPOIs', icon: '🔍', label: 'Find POIs', action: () => dispatch('findPOIs') },
     { id: 'findNearMe', icon: '📍', label: 'Near Me', action: () => dispatch('findPOIsNearMe') },
     { id: 'settings', icon: '⚙️', label: 'Settings', action: () => dispatch('showSettings') },

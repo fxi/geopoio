@@ -1,10 +1,42 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { settingsStore, gpxStore, cacheHelpers } from '../stores';
+  import { locationShareStore, locationShareHelpers } from '../stores/locationShare';
   import { gpxStoreHelpers } from '../stores';
+  import { LocationShareService, LocationTracker } from '../services/LocationShareService';
+  import { generateGroupId } from '../../lib/groupUtils';
 
   const dispatch = createEventDispatcher();
   export let show = false;
+
+  // Location sharing state
+  let locationTracker: LocationTracker | null = null;
+  let updateInterval: ReturnType<typeof setInterval> | null = null;
+  let showEmojiPicker = false;
+  let tempName = $locationShareStore.userName;
+  let tempGroupId = $locationShareStore.groupId || '';
+  let tempEmoji = $locationShareStore.userEmoji;
+  let connectionStatus: 'No server' | 'Streaming' | 'Invalid' = 'No server';
+
+  const emojis = ['📍', '🚀', '🎯', '⭐', '🔥', '💎', '🌟', '🎉', '🚗', '🏃', '🚴', '🛴', '✈️', '🚁', '🛸'];
+
+  // Update temp values when store changes
+  $: {
+    tempName = $locationShareStore.userName;
+    tempGroupId = $locationShareStore.groupId || '';
+    tempEmoji = $locationShareStore.userEmoji;
+  }
+
+  // Update connection status based on sharing state
+  $: {
+    if ($locationShareStore.isActive) {
+      connectionStatus = 'Streaming';
+    } else if (tempGroupId && tempName) {
+      connectionStatus = 'Invalid';
+    } else {
+      connectionStatus = 'No server';
+    }
+  }
 
   function closeDrawer() {
     show = false;
@@ -64,6 +96,111 @@
       settingsStore.update(s => ({ ...s }));
     }
   }
+
+  // Location sharing functions
+  function generateNewGroupId() {
+    tempGroupId = generateGroupId();
+  }
+
+  function selectEmoji(emoji: string) {
+    tempEmoji = emoji;
+    showEmojiPicker = false;
+  }
+
+  async function toggleLocationSharing() {
+    if ($locationShareStore.isActive) {
+      // Stop sharing
+      await stopLocationSharing();
+    } else {
+      // Start sharing
+      await startLocationSharing();
+    }
+  }
+
+  async function startLocationSharing() {
+    if (!tempName.trim() || !tempGroupId.trim()) {
+      alert('Please enter your name and group ID');
+      return;
+    }
+
+    try {
+      connectionStatus = 'Streaming';
+      
+      // Join or create group
+      const result = await LocationShareService.joinGroup(
+        tempGroupId,
+        tempName.trim(),
+        tempEmoji
+      );
+
+      // Start location sharing
+      locationShareHelpers.startSharing(
+        result.groupId,
+        result.userId,
+        tempName.trim(),
+        tempEmoji
+      );
+
+      // Start location tracking
+      locationTracker = new LocationTracker();
+      await locationTracker.start(async (lat, lon) => {
+        try {
+          await LocationShareService.updateLocation(
+            result.groupId,
+            result.userId,
+            tempName.trim(),
+            tempEmoji,
+            lat,
+            lon
+          );
+        } catch (err) {
+          console.error('Failed to update location:', err);
+          connectionStatus = 'Invalid';
+        }
+      });
+
+      // Start polling for other members
+      updateInterval = setInterval(async () => {
+        try {
+          const membersResult = await LocationShareService.getMembers(result.groupId);
+          locationShareHelpers.updateMembers(membersResult.members);
+        } catch (err) {
+          console.error('Failed to fetch members:', err);
+          connectionStatus = 'Invalid';
+        }
+      }, 5000);
+
+    } catch (err) {
+      console.error('Failed to start location sharing:', err);
+      connectionStatus = 'Invalid';
+      alert('Failed to start location sharing: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    }
+  }
+
+  async function stopLocationSharing() {
+    try {
+      const state = $locationShareStore;
+      if (state.groupId && state.userId) {
+        await LocationShareService.leaveGroup(state.groupId, state.userId);
+      }
+    } catch (err) {
+      console.error('Failed to leave group:', err);
+    }
+
+    // Clean up
+    if (locationTracker) {
+      locationTracker.stop();
+      locationTracker = null;
+    }
+    
+    if (updateInterval) {
+      clearInterval(updateInterval);
+      updateInterval = null;
+    }
+
+    locationShareHelpers.stopSharing();
+    connectionStatus = 'No server';
+  }
 </script>
 
 {#if show}
@@ -75,6 +212,80 @@
     </div>
 
     <div class="drawer-content">
+      <!-- Location Sharing -->
+      <section class="settings-section">
+        <h3>🌐 Location Sharing</h3>
+        
+        <!-- Name Input -->
+        <div class="location-field">
+          <label for="userName">Name</label>
+          <input 
+            id="userName"
+            type="text" 
+            bind:value={tempName}
+            placeholder="Enter your name"
+            maxlength="20"
+            class="location-input"
+          />
+        </div>
+
+        <!-- Group ID Input -->
+        <div class="location-field">
+          <label for="groupId">Group ID</label>
+          <div class="group-id-row">
+            <input 
+              id="groupId"
+              type="text" 
+              bind:value={tempGroupId}
+              placeholder="turtle-blue-flying-1234"
+              class="location-input"
+            />
+            <button class="new-button" on:click={generateNewGroupId}>New</button>
+          </div>
+        </div>
+
+        <!-- Emoji Picker -->
+        <div class="location-field">
+          <label>Emoji</label>
+          <div class="emoji-section">
+            <button class="emoji-display" on:click={() => showEmojiPicker = !showEmojiPicker}>
+              {tempEmoji}
+            </button>
+            {#if showEmojiPicker}
+              <div class="emoji-picker">
+                {#each emojis as emoji}
+                  <button 
+                    class="emoji-option"
+                    on:click={() => selectEmoji(emoji)}
+                  >
+                    {emoji}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Share Toggle -->
+        <div class="location-field">
+          <button 
+            class="share-toggle {$locationShareStore.isActive ? 'active' : ''}"
+            on:click={toggleLocationSharing}
+            disabled={!tempName.trim() || !tempGroupId.trim()}
+          >
+            {$locationShareStore.isActive ? 'Stop Sharing' : 'Start Sharing'}
+          </button>
+        </div>
+
+        <!-- Status Box -->
+        <div class="status-box">
+          <div class="status-label">Status</div>
+          <div class="status-indicator {connectionStatus.toLowerCase().replace(' ', '-')}">
+            {connectionStatus}
+          </div>
+        </div>
+      </section>
+
       <!-- POI Types -->
       <section class="settings-section">
         <h3>Location Types</h3>
@@ -505,5 +716,185 @@
     width: 18px;
     height: 18px;
     accent-color: #00BFFF;
+  }
+
+  /* Location Sharing Styles */
+  .location-field {
+    margin-bottom: 16px;
+  }
+
+  .location-field label {
+    display: block;
+    color: white;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 8px;
+  }
+
+  .location-input {
+    width: 100%;
+    padding: 12px;
+    background: #333;
+    border: 1px solid #555;
+    border-radius: 8px;
+    color: white;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .location-input:focus {
+    border-color: #00BFFF;
+    box-shadow: 0 0 0 2px rgba(0, 191, 255, 0.2);
+  }
+
+  .location-input::placeholder {
+    color: #999;
+  }
+
+  .group-id-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .new-button {
+    padding: 12px 16px;
+    background: #28a745;
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    white-space: nowrap;
+  }
+
+  .new-button:hover {
+    background: #218838;
+  }
+
+  .emoji-section {
+    position: relative;
+  }
+
+  .emoji-display {
+    width: 50px;
+    height: 50px;
+    background: #333;
+    border: 1px solid #555;
+    border-radius: 8px;
+    font-size: 24px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .emoji-display:hover {
+    border-color: #00BFFF;
+  }
+
+  .emoji-picker {
+    position: absolute;
+    top: 60px;
+    left: 0;
+    background: #333;
+    border: 1px solid #555;
+    border-radius: 8px;
+    padding: 12px;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .emoji-option {
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    border: 1px solid #555;
+    border-radius: 6px;
+    font-size: 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .emoji-option:hover {
+    background: #444;
+    border-color: #00BFFF;
+  }
+
+  .share-toggle {
+    width: 100%;
+    padding: 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #28a745;
+    color: white;
+  }
+
+  .share-toggle:hover:not(:disabled) {
+    background: #218838;
+  }
+
+  .share-toggle.active {
+    background: #dc3545;
+  }
+
+  .share-toggle.active:hover {
+    background: #c82333;
+  }
+
+  .share-toggle:disabled {
+    background: #666;
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .status-box {
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .status-label {
+    color: #999;
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+
+  .status-indicator {
+    font-size: 14px;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 4px;
+    display: inline-block;
+  }
+
+  .status-indicator.no-server {
+    color: #999;
+    background: rgba(153, 153, 153, 0.2);
+  }
+
+  .status-indicator.streaming {
+    color: #28a745;
+    background: rgba(40, 167, 69, 0.2);
+  }
+
+  .status-indicator.invalid {
+    color: #dc3545;
+    background: rgba(220, 53, 69, 0.2);
   }
 </style>

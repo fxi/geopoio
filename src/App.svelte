@@ -66,6 +66,7 @@
     }
   }
 
+
   async function handleLoadTestRoute() {
     try {
       console.log("🧪 Loading test GPX file from /public/test.gpx");
@@ -133,7 +134,6 @@
 
   <BottomControls
     on:uploadGPX={handleUploadGPX}
-    on:loadTestRoute={handleLoadTestRoute}
     on:showSettings={handleShowSettings}
     on:locateMe={handleLocateMe}
     on:exportWaypoints={handleExportWaypoints}
